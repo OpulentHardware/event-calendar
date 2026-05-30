@@ -546,23 +546,86 @@
       }).filter(event => event.date && event.event);
     }
 
-    function getYear(dateText) {
-      const yearMatch = String(dateText).match(/20\d{2}/);
-      return yearMatch ? Number(yearMatch[0]) : 2026;
+    const MONTH_ALIASES = {
+      jan: "January",
+      january: "January",
+      feb: "February",
+      february: "February",
+      mar: "March",
+      march: "March",
+      apr: "April",
+      april: "April",
+      may: "May",
+      jun: "June",
+      june: "June",
+      jul: "July",
+      july: "July",
+      aug: "August",
+      august: "August",
+      sep: "September",
+      sept: "September",
+      september: "September",
+      oct: "October",
+      october: "October",
+      nov: "November",
+      november: "November",
+      dec: "December",
+      december: "December"
+    };
+
+    function findWrittenMonth(text) {
+      const normalized = String(text || "").toLowerCase();
+      const match = normalized.match(/\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t)?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/);
+      return match ? MONTH_ALIASES[match[1]] : "";
+    }
+
+    function parseSheetDate(dateText) {
+      const raw = String(dateText || "").trim();
+      const text = raw.replace(/[–—]/g, "-");
+
+      // Google Visualization dates can arrive as Date(2026,5,12), where month is zero-based.
+      const googleDateMatch = text.match(/Date\((\d{4}),(\d{1,2}),(\d{1,2})/);
+      if (googleDateMatch) {
+        return new Date(Number(googleDateMatch[1]), Number(googleDateMatch[2]), Number(googleDateMatch[3]));
+      }
+
+      // Written or abbreviated dates such as September 19-20, Sept 19-20, Sep 19, or Aug 22-23.
+      const writtenMonth = findWrittenMonth(text);
+      if (writtenMonth) {
+        const yearMatch = text.match(/20\d{2}/);
+        const year = yearMatch ? Number(yearMatch[0]) : new Date().getFullYear();
+        const monthToken = text.match(/\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t)?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i);
+        const afterMonth = monthToken ? text.slice(monthToken.index + monthToken[0].length) : text;
+        const dayMatch = afterMonth.match(/\b(\d{1,2})(?:\s*-\s*\d{1,2})?\b/);
+        if (dayMatch) return new Date(`${writtenMonth} ${dayMatch[1]}, ${year} 00:00:00`);
+      }
+
+      // Numeric dates such as 6/12/2026, 06-12-2026, or 6/12.
+      const numericMatch = text.match(/\b(\d{1,2})[\/.-](\d{1,2})(?:[\/.-](\d{2,4}))?/);
+      if (numericMatch) {
+        let year = numericMatch[3] ? Number(numericMatch[3]) : new Date().getFullYear();
+        if (year < 100) year += 2000;
+        return new Date(year, Number(numericMatch[1]) - 1, Number(numericMatch[2]));
+      }
+
+      // Last-resort browser parse.
+      const parsed = new Date(text);
+      if (!Number.isNaN(parsed.getTime())) return parsed;
+
+      return null;
     }
 
     function getMonthName(dateText) {
-      const months = Object.keys(MONTH_COLORS);
-      return months.find(month => String(dateText).toLowerCase().includes(month.toLowerCase())) || "Other";
+      const parsed = parseSheetDate(dateText);
+      if (parsed) {
+        return parsed.toLocaleString("en-US", { month: "long" });
+      }
+
+      return findWrittenMonth(dateText) || "Other";
     }
 
     function getStartDate(dateText) {
-      const text = String(dateText).replace(/[–—]/g, "-");
-      const month = getMonthName(text);
-      const dayMatch = text.match(/\b(\d{1,2})\b/);
-      const year = getYear(text);
-      if (!dayMatch || month === "Other") return new Date(9999, 11, 31);
-      return new Date(`${month} ${dayMatch[1]}, ${year} 00:00:00`);
+      return parseSheetDate(dateText) || new Date(9999, 11, 31);
     }
 
     function enrichEvent(event) {
