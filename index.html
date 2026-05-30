@@ -1,0 +1,643 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Upcoming Events</title>
+  <meta name="description" content="At-a-glance upcoming motorsport events pulled from a Google Sheet." />
+  <style>
+    :root {
+      --bg: #090a0c;
+      --panel: rgba(255,255,255,.07);
+      --panel-strong: rgba(255,255,255,.11);
+      --text: #f5f7fb;
+      --muted: rgba(245,247,251,.68);
+      --line: rgba(255,255,255,.14);
+      --fluoro: #d7ff00;
+      --shadow: 0 22px 55px rgba(0,0,0,.36);
+      --radius: 22px;
+      --max: 1060px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(215,255,0,.14), transparent 34rem),
+        radial-gradient(circle at 80% 12%, rgba(111, 117, 255, .14), transparent 28rem),
+        linear-gradient(180deg, #090a0c 0%, #111318 52%, #07080a 100%);
+      color: var(--text);
+    }
+
+    a { color: inherit; }
+
+    .site-shell {
+      width: min(var(--max), calc(100% - 28px));
+      margin: 0 auto;
+      padding: 28px 0 58px;
+    }
+
+    header.hero {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      padding: 20px 0 18px;
+      margin-bottom: 14px;
+      backdrop-filter: blur(18px);
+      background: linear-gradient(180deg, rgba(9,10,12,.94), rgba(9,10,12,.72));
+      border-bottom: 1px solid rgba(255,255,255,.08);
+    }
+
+    .hero-inner {
+      width: min(var(--max), calc(100% - 28px));
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 18px;
+      align-items: end;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      color: #0b0d10;
+      background: var(--fluoro);
+      font-weight: 850;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+      font-size: 11px;
+      padding: 8px 11px;
+      border-radius: 999px;
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(34px, 7vw, 72px);
+      line-height: .92;
+      letter-spacing: -.06em;
+    }
+
+    .subhead {
+      margin: 12px 0 0;
+      color: var(--muted);
+      font-size: 15px;
+      max-width: 680px;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .search, .select {
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.075);
+      color: var(--text);
+      border-radius: 999px;
+      min-height: 42px;
+      padding: 0 15px;
+      outline: none;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+    }
+
+    .search { width: min(250px, 70vw); }
+    .select { cursor: pointer; }
+    .select option { background: #111318; color: #fff; }
+
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      color: var(--muted);
+      font-size: 13px;
+      margin: 18px 0 16px;
+    }
+
+    .legend {
+      display: flex;
+      gap: 7px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .legend-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--line);
+      padding: 7px 9px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.045);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--month-color, var(--fluoro));
+      box-shadow: 0 0 16px var(--month-color, var(--fluoro));
+    }
+
+    .events-grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    .month-header {
+      position: sticky;
+      top: 132px;
+      z-index: 4;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 26px 0 6px;
+      color: var(--text);
+      font-weight: 850;
+      letter-spacing: -.02em;
+      text-transform: uppercase;
+      font-size: 13px;
+    }
+
+    .month-header::after {
+      content: "";
+      height: 1px;
+      flex: 1;
+      background: linear-gradient(90deg, var(--month-color), transparent);
+      opacity: .7;
+    }
+
+    .event-card {
+      --month-color: var(--fluoro);
+      border: 1px solid rgba(255,255,255,.13);
+      background: linear-gradient(135deg, rgba(255,255,255,.095), rgba(255,255,255,.045));
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      cursor: pointer;
+      transition: transform .18s ease, border-color .18s ease, background .18s ease;
+      position: relative;
+    }
+
+    .event-card::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 7px;
+      background: var(--month-color);
+      box-shadow: 0 0 28px var(--month-color);
+    }
+
+    .event-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(255,255,255,.24);
+      background: linear-gradient(135deg, rgba(255,255,255,.12), rgba(255,255,255,.055));
+    }
+
+    .card-summary {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 14px;
+      align-items: center;
+      padding: 19px 20px 19px 25px;
+    }
+
+    .event-title {
+      font-size: clamp(19px, 3vw, 27px);
+      line-height: 1.05;
+      font-weight: 875;
+      letter-spacing: -.04em;
+      margin: 0;
+    }
+
+    .collapsed-meta {
+      display: flex;
+      gap: 9px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: rgba(255,255,255,.82);
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(0,0,0,.18);
+      border-radius: 999px;
+      padding: 7px 10px;
+      font-size: 13px;
+      line-height: 1;
+    }
+
+    .expand-indicator {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(255,255,255,.18);
+      background: rgba(0,0,0,.18);
+      color: var(--month-color);
+      font-size: 22px;
+      font-weight: 700;
+      transition: rotate .18s ease, background .18s ease;
+    }
+
+    .event-card[aria-expanded="true"] .expand-indicator {
+      rotate: 45deg;
+      background: rgba(255,255,255,.08);
+    }
+
+    .card-details {
+      display: grid;
+      grid-template-rows: 0fr;
+      transition: grid-template-rows .22s ease;
+    }
+
+    .event-card[aria-expanded="true"] .card-details { grid-template-rows: 1fr; }
+
+    .details-inner {
+      overflow: hidden;
+    }
+
+    .details-content {
+      margin: 0 20px 20px 25px;
+      padding: 18px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.18);
+      border-radius: 18px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 13px;
+    }
+
+    .detail {
+      min-width: 0;
+    }
+
+    .detail-label {
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      font-size: 10px;
+      font-weight: 800;
+      margin-bottom: 5px;
+    }
+
+    .detail-value {
+      color: rgba(255,255,255,.92);
+      font-size: 14px;
+      overflow-wrap: anywhere;
+    }
+
+    .detail.notes, .detail.link-row { grid-column: 1 / -1; }
+
+    .button-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 40px;
+      padding: 0 14px;
+      border-radius: 999px;
+      background: var(--month-color);
+      color: #08090b;
+      font-weight: 850;
+      text-decoration: none;
+      width: fit-content;
+    }
+
+    .empty, .error {
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.06);
+      border-radius: var(--radius);
+      padding: 22px;
+      color: var(--muted);
+    }
+
+    .footer-note {
+      color: rgba(255,255,255,.46);
+      font-size: 12px;
+      margin-top: 28px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 760px) {
+      .site-shell { width: min(100% - 22px, var(--max)); padding-top: 18px; }
+      header.hero { padding-top: 14px; }
+      .hero-inner { grid-template-columns: 1fr; align-items: start; }
+      .toolbar { justify-content: stretch; }
+      .search, .select { width: 100%; }
+      .status-row { align-items: flex-start; flex-direction: column; }
+      .legend { justify-content: flex-start; }
+      .month-header { top: 218px; }
+      .card-summary { grid-template-columns: 1fr auto; padding: 17px 15px 17px 22px; }
+      .details-content { grid-template-columns: 1fr; margin: 0 15px 15px 22px; padding: 15px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-inner">
+      <div>
+        <div class="eyebrow">At a glance</div>
+        <h1>Upcoming Events</h1>
+        <p class="subhead">Live event cards pulled from your Google Sheet. Tap a card to expand the details.</p>
+      </div>
+      <div class="toolbar" aria-label="Event controls">
+        <input id="search" class="search" type="search" placeholder="Search events" autocomplete="off" />
+        <select id="typeFilter" class="select" aria-label="Filter by event type">
+          <option value="all">All types</option>
+        </select>
+      </div>
+    </div>
+  </header>
+
+  <main class="site-shell">
+    <div class="status-row">
+      <div id="status">Loading Google Sheet…</div>
+      <div id="legend" class="legend" aria-label="Month color legend"></div>
+    </div>
+    <section id="events" class="events-grid" aria-live="polite"></section>
+    <p class="footer-note">
+      Data source: Google Sheet CSV export. To update this page, edit the sheet and refresh the site. If the page fails to load on GitHub Pages, make sure the sheet sharing is set to “Anyone with the link can view.”
+    </p>
+  </main>
+
+  <script>
+    const SHEET_ID = "1enr2TJqijAsfg5xHqy23Uuri3ZD0cFz76qbyvsnOXic";
+    const GID = "0";
+    const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${GID}`;
+
+    const MONTH_COLORS = {
+      January: "#7dd3fc",
+      February: "#c084fc",
+      March: "#86efac",
+      April: "#f9a8d4",
+      May: "#fde047",
+      June: "#d7ff00",
+      July: "#fb923c",
+      August: "#38bdf8",
+      September: "#a3e635",
+      October: "#f97316",
+      November: "#e879f9",
+      December: "#facc15"
+    };
+
+    const FALLBACK_EVENTS = [
+      { date: "June 12–14, 2026", day: "Friday–Sunday", event: "SCCA National Tour", type: "SFR AutoX", location: "Crows Landing", link: "Register / Info", notes: "Big national-level autocross weekend" },
+      { date: "June 18", day: "Thursday", event: "Track Night in America", type: "Track Night", location: "Thunderhill", link: "Register / Info", notes: "Evening track event" },
+      { date: "June 27", day: "Saturday", event: "LPR-PCA Timed Event AX #4", type: "Autocross", location: "Alameda Point", link: "Register / Info", notes: "One-day PCA autocross" },
+      { date: "July 4–5, 2026", day: "Saturday–Sunday", event: "AAS Rounds 9–10, Larry Park Memorial", type: "Autocross", location: "Crows Landing", link: "Register / Info", notes: "Two-day AAS weekend" },
+      { date: "July 18–19, 2026", day: "Saturday–Sunday", event: "SFR Regional Autocross", type: "SFR AutoX", location: "Crows Landing", link: "Register / Info", notes: "Core regional SFR weekend" },
+      { date: "September 24", day: "Thursday", event: "Track Night in America", type: "Track Night", location: "Thunderhill", link: "https://www.tracknightinamerica.com/events/2009478-track-night-2026-thunderhill-raceway-park-september-24", notes: "2nd outing?" }
+    ];
+
+    const state = {
+      events: [],
+      search: "",
+      type: "all"
+    };
+
+    const $events = document.querySelector("#events");
+    const $status = document.querySelector("#status");
+    const $legend = document.querySelector("#legend");
+    const $search = document.querySelector("#search");
+    const $typeFilter = document.querySelector("#typeFilter");
+
+    function parseCSV(text) {
+      const rows = [];
+      let row = [];
+      let cell = "";
+      let inQuotes = false;
+
+      for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const next = text[i + 1];
+
+        if (char === '"' && inQuotes && next === '"') {
+          cell += '"';
+          i++;
+        } else if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === "," && !inQuotes) {
+          row.push(cell.trim());
+          cell = "";
+        } else if ((char === "\n" || char === "\r") && !inQuotes) {
+          if (char === "\r" && next === "\n") i++;
+          row.push(cell.trim());
+          if (row.some(Boolean)) rows.push(row);
+          row = [];
+          cell = "";
+        } else {
+          cell += char;
+        }
+      }
+      row.push(cell.trim());
+      if (row.some(Boolean)) rows.push(row);
+      return rows;
+    }
+
+    function normalizeKey(key) {
+      return key.toLowerCase().replace(/[^a-z0-9]+/g, "").trim();
+    }
+
+    function rowsToEvents(rows) {
+      if (!rows.length) return [];
+      const headers = rows[0].map(normalizeKey);
+      const get = (row, names) => {
+        for (const name of names) {
+          const idx = headers.indexOf(normalizeKey(name));
+          if (idx >= 0) return row[idx] || "";
+        }
+        return "";
+      };
+
+      return rows.slice(1).map(row => ({
+        date: get(row, ["Date"]),
+        day: get(row, ["Day"]),
+        event: get(row, ["Event / Series", "Event", "Series", "Event Series"]),
+        type: get(row, ["Type"]),
+        location: get(row, ["Location"]),
+        link: get(row, ["Link", "Register", "Info"]),
+        notes: get(row, ["Notes", "Note"])
+      })).filter(event => event.date && event.event);
+    }
+
+    function getYear(dateText) {
+      const yearMatch = String(dateText).match(/20\d{2}/);
+      return yearMatch ? Number(yearMatch[0]) : 2026;
+    }
+
+    function getMonthName(dateText) {
+      const months = Object.keys(MONTH_COLORS);
+      return months.find(month => String(dateText).toLowerCase().includes(month.toLowerCase())) || "Other";
+    }
+
+    function getStartDate(dateText) {
+      const text = String(dateText).replace(/[–—]/g, "-");
+      const month = getMonthName(text);
+      const dayMatch = text.match(/\b(\d{1,2})\b/);
+      const year = getYear(text);
+      if (!dayMatch || month === "Other") return new Date(9999, 11, 31);
+      return new Date(`${month} ${dayMatch[1]}, ${year} 00:00:00`);
+    }
+
+    function enrichEvent(event) {
+      const start = getStartDate(event.date);
+      const month = getMonthName(event.date);
+      return {
+        ...event,
+        month,
+        start,
+        color: MONTH_COLORS[month] || "#d7ff00"
+      };
+    }
+
+    function isUrl(value) {
+      return /^https?:\/\//i.test(String(value || "").trim());
+    }
+
+    function escapeHTML(value) {
+      return String(value || "").replace(/[&<>'"]/g, char => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "'": "&#39;",
+        '"': "&quot;"
+      }[char]));
+    }
+
+    function visibleEvents() {
+      const query = state.search.trim().toLowerCase();
+      return state.events.filter(event => {
+        const haystack = [event.event, event.date, event.day, event.type, event.location, event.notes].join(" ").toLowerCase();
+        const matchesSearch = !query || haystack.includes(query);
+        const matchesType = state.type === "all" || event.type === state.type;
+        return matchesSearch && matchesType;
+      });
+    }
+
+    function renderTypeFilter(events) {
+      const types = [...new Set(events.map(e => e.type).filter(Boolean))].sort();
+      $typeFilter.innerHTML = `<option value="all">All types</option>` + types.map(type => `<option value="${escapeHTML(type)}">${escapeHTML(type)}</option>`).join("");
+    }
+
+    function renderLegend(events) {
+      const months = [...new Set(events.map(e => e.month).filter(Boolean))];
+      $legend.innerHTML = months.map(month => `
+        <span class="legend-chip" style="--month-color:${MONTH_COLORS[month] || "#d7ff00"}">
+          <span class="dot"></span>${escapeHTML(month)}
+        </span>
+      `).join("");
+    }
+
+    function render() {
+      const events = visibleEvents();
+      const sourceCount = state.events.length;
+      $status.textContent = `${events.length} of ${sourceCount} events shown`;
+
+      if (!events.length) {
+        $events.innerHTML = `<div class="empty">No events match the current filters.</div>`;
+        return;
+      }
+
+      let currentMonth = "";
+      $events.innerHTML = events.map((event, index) => {
+        const monthHeader = event.month !== currentMonth
+          ? `<div class="month-header" style="--month-color:${event.color}"><span class="dot"></span>${escapeHTML(event.month)}</div>`
+          : "";
+        currentMonth = event.month;
+
+        const linkContent = isUrl(event.link)
+          ? `<a class="button-link" href="${escapeHTML(event.link)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">Register / Info</a>`
+          : escapeHTML(event.link || "Not listed");
+
+        return `
+          ${monthHeader}
+          <article class="event-card" tabindex="0" role="button" aria-expanded="false" style="--month-color:${event.color}" data-card-index="${index}">
+            <div class="card-summary">
+              <div>
+                <h2 class="event-title">${escapeHTML(event.event)}</h2>
+                <div class="collapsed-meta">
+                  <span class="pill">${escapeHTML(event.date)}</span>
+                  <span class="pill">${escapeHTML(event.day || "Day TBD")}</span>
+                </div>
+              </div>
+              <div class="expand-indicator" aria-hidden="true">+</div>
+            </div>
+            <div class="card-details">
+              <div class="details-inner">
+                <div class="details-content">
+                  <div class="detail"><div class="detail-label">Type</div><div class="detail-value">${escapeHTML(event.type || "Not listed")}</div></div>
+                  <div class="detail"><div class="detail-label">Location</div><div class="detail-value">${escapeHTML(event.location || "Not listed")}</div></div>
+                  <div class="detail"><div class="detail-label">Date</div><div class="detail-value">${escapeHTML(event.date)}</div></div>
+                  <div class="detail"><div class="detail-label">Day</div><div class="detail-value">${escapeHTML(event.day || "Not listed")}</div></div>
+                  <div class="detail link-row"><div class="detail-label">Link</div><div class="detail-value">${linkContent}</div></div>
+                  <div class="detail notes"><div class="detail-label">Notes</div><div class="detail-value">${escapeHTML(event.notes || "No notes added")}</div></div>
+                </div>
+              </div>
+            </div>
+          </article>
+        `;
+      }).join("");
+
+      document.querySelectorAll(".event-card").forEach(card => {
+        const toggle = () => {
+          const isOpen = card.getAttribute("aria-expanded") === "true";
+          card.setAttribute("aria-expanded", String(!isOpen));
+        };
+        card.addEventListener("click", toggle);
+        card.addEventListener("keydown", event => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            toggle();
+          }
+        });
+      });
+    }
+
+    async function loadEvents() {
+      try {
+        const response = await fetch(CSV_URL, { cache: "no-store" });
+        if (!response.ok) throw new Error(`Sheet request failed with ${response.status}`);
+        const text = await response.text();
+        const rows = parseCSV(text);
+        const events = rowsToEvents(rows).map(enrichEvent).sort((a, b) => a.start - b.start);
+        if (!events.length) throw new Error("No events found in sheet");
+        state.events = events;
+        $status.textContent = "Loaded from Google Sheet";
+      } catch (error) {
+        console.warn(error);
+        state.events = FALLBACK_EVENTS.map(enrichEvent).sort((a, b) => a.start - b.start);
+        $status.textContent = "Using built-in fallback events. Check Google Sheet sharing if live updates do not appear.";
+      }
+
+      renderTypeFilter(state.events);
+      renderLegend(state.events);
+      render();
+    }
+
+    $search.addEventListener("input", event => {
+      state.search = event.target.value;
+      render();
+    });
+
+    $typeFilter.addEventListener("change", event => {
+      state.type = event.target.value;
+      render();
+    });
+
+    loadEvents();
+  </script>
+</body>
+</html>
