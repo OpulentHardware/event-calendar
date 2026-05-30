@@ -273,6 +273,39 @@
       background: linear-gradient(135deg, rgba(255,255,255,.12), rgba(255,255,255,.055));
     }
 
+    .event-card.is-struck,
+    .event-card.is-past {
+      opacity: .38;
+      filter: grayscale(1) saturate(.2);
+      background: linear-gradient(135deg, rgba(255,255,255,.045), rgba(255,255,255,.02));
+      border-color: rgba(255,255,255,.08);
+      box-shadow: none;
+    }
+
+    .event-card.is-struck .event-title,
+    .event-card.is-struck .pill,
+    .event-card.is-struck .detail-value {
+      text-decoration: line-through;
+      color: rgba(245,247,251,.48);
+    }
+
+    .event-card.is-struck::after {
+      content: "Removed / crossed out";
+      position: absolute;
+      top: 13px;
+      right: 14px;
+      padding: 6px 8px;
+      border-radius: 999px;
+      background: rgba(0,0,0,.34);
+      border: 1px solid rgba(255,255,255,.1);
+      color: rgba(255,255,255,.56);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      pointer-events: none;
+    }
+
     .card-summary {
       display: grid;
       grid-template-columns: 1fr auto;
@@ -450,14 +483,30 @@
     </div>
     <section id="events" class="events-grid" aria-live="polite"></section>
     <p class="footer-note">
-      Data source: Google Sheet CSV export. To update this page, edit the sheet and refresh the site. If the page fails to load on GitHub Pages, make sure the sheet sharing is set to “Anyone with the link can view.”
+      Data source: Google Sheet live export. CSV mode updates from the public sheet and uses a cache-buster on every page load. Optional API mode can detect strikethrough formatting. If the page fails to load on GitHub Pages, make sure the sheet sharing is set to “Anyone with the link can view” and that GID matches the correct sheet tab.
     </p>
   </main>
 
   <script>
     const SHEET_ID = "1enr2TJqijAsfg5xHqy23Uuri3ZD0cFz76qbyvsnOXic";
+
+    // IMPORTANT: gid must match the exact tab you want to display.
+    // In Google Sheets, click the tab and copy the number after gid= from the browser URL.
     const GID = "0";
-    const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${GID}`;
+
+    // Optional. Leave blank for public CSV mode. Add an API key only if you want the site
+    // to detect Google Sheet formatting, including strikethrough rows/cells.
+    const GOOGLE_SHEETS_API_KEY = "";
+
+    function getCsvUrl() {
+      const cacheBust = Date.now();
+      return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${GID}&cb=${cacheBust}`;
+    }
+
+    function getSheetsApiUrl() {
+      const fields = "sheets(properties(sheetId,title),data(rowData(values(formattedValue,effectiveFormat/textFormat/strikethrough,userEnteredFormat/textFormat/strikethrough))))";
+      return `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}?includeGridData=true&fields=${encodeURIComponent(fields)}&key=${encodeURIComponent(GOOGLE_SHEETS_API_KEY)}`;
+    }
 
     const MONTH_COLORS = {
       January: "#7dd3fc",
@@ -486,7 +535,8 @@
     const state = {
       events: [],
       search: "",
-      type: "all"
+      type: "all",
+      sourceMode: "loading"
     };
 
     const $events = document.querySelector("#events");
@@ -566,6 +616,90 @@
       })).filter(event => event.date && event.event);
     }
 
+    function cellText(cell) {
+      return cell?.formattedValue || "";
+    }
+
+    function cellIsStruck(cell) {
+      return Boolean(
+        cell?.effectiveFormat?.textFormat?.strikethrough ||
+        cell?.userEnteredFormat?.textFormat?.strikethrough
+      );
+    }
+
+    function apiRowsToEvents(rowData = []) {
+      const rows = rowData.map(row => row.values || []);
+      if (!rows.length) return [];
+
+      const headers = rows[0].map(cell => normalizeKey(cellText(cell)));
+      const getIndex = names => {
+        for (const name of names) {
+          const idx = headers.indexOf(normalizeKey(name));
+          if (idx >= 0) return idx;
+        }
+        return -1;
+      };
+      const get = (row, names) => {
+        const idx = getIndex(names);
+        return idx >= 0 ? cellText(row[idx]) : "";
+      };
+      const rowHasStrike = row => {
+        const importantColumns = [
+          getIndex(["Date"]),
+          getIndex(["Day"]),
+          getIndex(["Event / Series", "Event", "Series", "Event Series"]),
+          getIndex(["Type"]),
+          getIndex(["Location"]),
+          getIndex(["Notes", "Note"])
+        ].filter(idx => idx >= 0);
+        return importantColumns.some(idx => cellIsStruck(row[idx]));
+      };
+
+      return rows.slice(1).map(row => ({
+        date: get(row, ["Date"]),
+        day: get(row, ["Day"]),
+        event: get(row, ["Event / Series", "Event", "Series", "Event Series"]),
+        type: get(row, ["Type"]),
+        location: get(row, ["Location"]),
+        link: get(row, ["Link", "Register", "Info"]),
+        notes: get(row, ["Notes", "Note"]),
+        struck: rowHasStrike(row)
+      })).filter(event => event.date && event.event);
+    }
+
+    async function fetchCsvEvents() {
+      const response = await fetch(getCsvUrl(), {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" }
+      });
+      if (!response.ok) throw new Error(`Sheet CSV request failed with ${response.status}`);
+      const text = await response.text();
+      const rows = parseCSV(text);
+      const events = rowsToEvents(rows);
+      if (!events.length) throw new Error("No events found in CSV sheet data");
+      return { events, mode: "csv" };
+    }
+
+    async function fetchApiEvents() {
+      const response = await fetch(getSheetsApiUrl(), {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" }
+      });
+      if (!response.ok) throw new Error(`Google Sheets API request failed with ${response.status}`);
+      const data = await response.json();
+      const targetSheet = data.sheets?.find(sheet => String(sheet.properties?.sheetId) === String(GID));
+      if (!targetSheet) throw new Error(`No sheet tab found for gid ${GID}`);
+      const rowData = targetSheet.data?.[0]?.rowData || [];
+      const events = apiRowsToEvents(rowData);
+      if (!events.length) throw new Error("No events found in API sheet data");
+      return { events, mode: "api", tabTitle: targetSheet.properties?.title || "selected tab" };
+    }
+
+    async function fetchLiveEvents() {
+      if (GOOGLE_SHEETS_API_KEY.trim()) return fetchApiEvents();
+      return fetchCsvEvents();
+    }
+
     function getYear(dateText) {
       const yearMatch = String(dateText).match(/20\d{2}/);
       return yearMatch ? Number(yearMatch[0]) : 2026;
@@ -590,6 +724,7 @@
       const month = getMonthName(event.date);
       return {
         ...event,
+        struck: Boolean(event.struck),
         month,
         start,
         color: MONTH_COLORS[month] || "#d7ff00"
@@ -637,7 +772,8 @@
     function render() {
       const events = visibleEvents();
       const sourceCount = state.events.length;
-      $status.textContent = `${events.length} of ${sourceCount} events shown`;
+      const sourceLabel = state.sourceMode === "fallback" ? "fallback data" : state.sourceMode === "api" ? "live Google Sheet API" : "live Google Sheet CSV";
+      $status.textContent = `${events.length} of ${sourceCount} events shown from ${sourceLabel}`;
 
       if (!events.length) {
         $events.innerHTML = `<div class="empty">No events match the current filters.</div>`;
@@ -657,7 +793,7 @@
 
         return `
           ${monthHeader}
-          <article class="event-card" tabindex="0" role="button" aria-expanded="false" style="--month-color:${event.color}" data-card-index="${index}">
+          <article class="event-card ${event.struck ? "is-struck" : ""}" tabindex="0" role="button" aria-expanded="false" style="--month-color:${event.color}" data-card-index="${index}">
             <div class="card-summary">
               <div>
                 <h2 class="event-title">${escapeHTML(event.event)}</h2>
@@ -701,18 +837,17 @@
 
     async function loadEvents() {
       try {
-        const response = await fetch(CSV_URL, { cache: "no-store" });
-        if (!response.ok) throw new Error(`Sheet request failed with ${response.status}`);
-        const text = await response.text();
-        const rows = parseCSV(text);
-        const events = rowsToEvents(rows).map(enrichEvent).sort((a, b) => a.start - b.start);
-        if (!events.length) throw new Error("No events found in sheet");
+        const result = await fetchLiveEvents();
+        const events = result.events.map(enrichEvent).sort((a, b) => a.start - b.start);
         state.events = events;
-        $status.textContent = "Loaded from Google Sheet";
+        state.sourceMode = result.mode;
+        const strikeNote = result.mode === "api" ? " Strikethrough formatting is enabled." : " CSV mode cannot read strikethrough formatting.";
+        $status.textContent = `Loaded from Google Sheet ${result.mode === "api" ? "API" : "CSV"}.${strikeNote}`;
       } catch (error) {
         console.warn(error);
         state.events = FALLBACK_EVENTS.map(enrichEvent).sort((a, b) => a.start - b.start);
-        $status.textContent = "Using built-in fallback events. Check Google Sheet sharing if live updates do not appear.";
+        state.sourceMode = "fallback";
+        $status.textContent = `Google Sheet failed to load, so built-in fallback events are showing. ${error.message}`;
       }
 
       renderTypeFilter(state.events);
