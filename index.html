@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Upcoming Events</title>
-  <meta name="description" content="At-a-glance upcoming motorsport events pulled from a Google Sheet." />
+  <meta name="description" content="At-a-glance upcoming motorsport events pulled live from a Google Sheet." />
   <style>
     :root {
       --bg: #090a0c;
@@ -273,39 +273,6 @@
       background: linear-gradient(135deg, rgba(255,255,255,.12), rgba(255,255,255,.055));
     }
 
-    .event-card.is-struck,
-    .event-card.is-past {
-      opacity: .38;
-      filter: grayscale(1) saturate(.2);
-      background: linear-gradient(135deg, rgba(255,255,255,.045), rgba(255,255,255,.02));
-      border-color: rgba(255,255,255,.08);
-      box-shadow: none;
-    }
-
-    .event-card.is-struck .event-title,
-    .event-card.is-struck .pill,
-    .event-card.is-struck .detail-value {
-      text-decoration: line-through;
-      color: rgba(245,247,251,.48);
-    }
-
-    .event-card.is-struck::after {
-      content: "Removed / crossed out";
-      position: absolute;
-      top: 13px;
-      right: 14px;
-      padding: 6px 8px;
-      border-radius: 999px;
-      background: rgba(0,0,0,.34);
-      border: 1px solid rgba(255,255,255,.1);
-      color: rgba(255,255,255,.56);
-      font-size: 11px;
-      font-weight: 800;
-      letter-spacing: .04em;
-      text-transform: uppercase;
-      pointer-events: none;
-    }
-
     .card-summary {
       display: grid;
       grid-template-columns: 1fr auto;
@@ -483,29 +450,17 @@
     </div>
     <section id="events" class="events-grid" aria-live="polite"></section>
     <p class="footer-note">
-      Data source: Google Sheet live export. CSV mode updates from the public sheet and uses a cache-buster on every page load. Optional API mode can detect strikethrough formatting. If the page fails to load on GitHub Pages, make sure the sheet sharing is set to “Anyone with the link can view” and that GID matches the correct sheet tab.
+      Data source: live Google Sheet. To update this page, edit the sheet and refresh the site. If the page fails to load on GitHub Pages, make sure the sheet sharing is set to “Anyone with the link can view” and that the GID matches the tab you want to show.
     </p>
   </main>
 
   <script>
     const SHEET_ID = "1enr2TJqijAsfg5xHqy23Uuri3ZD0cFz76qbyvsnOXic";
-
-    // IMPORTANT: gid must match the exact tab you want to display.
-    // In Google Sheets, click the tab and copy the number after gid= from the browser URL.
     const GID = "0";
 
-    // Optional. Leave blank for public CSV mode. Add an API key only if you want the site
-    // to detect Google Sheet formatting, including strikethrough rows/cells.
-    const GOOGLE_SHEETS_API_KEY = "";
-
-    function getCsvUrl() {
+    function getSheetJsonUrl() {
       const cacheBust = Date.now();
-      return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${GID}&cb=${cacheBust}`;
-    }
-
-    function getSheetsApiUrl() {
-      const fields = "sheets(properties(sheetId,title),data(rowData(values(formattedValue,effectiveFormat/textFormat/strikethrough,userEnteredFormat/textFormat/strikethrough))))";
-      return `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}?includeGridData=true&fields=${encodeURIComponent(fields)}&key=${encodeURIComponent(GOOGLE_SHEETS_API_KEY)}`;
+      return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?gid=${GID}&headers=1&tqx=out:json&cb=${cacheBust}`;
     }
 
     const MONTH_COLORS = {
@@ -523,20 +478,10 @@
       December: "#facc15"
     };
 
-    const FALLBACK_EVENTS = [
-      { date: "June 12–14, 2026", day: "Friday–Sunday", event: "SCCA National Tour", type: "SFR AutoX", location: "Crows Landing", link: "Register / Info", notes: "Big national-level autocross weekend" },
-      { date: "June 18", day: "Thursday", event: "Track Night in America", type: "Track Night", location: "Thunderhill", link: "Register / Info", notes: "Evening track event" },
-      { date: "June 27", day: "Saturday", event: "LPR-PCA Timed Event AX #4", type: "Autocross", location: "Alameda Point", link: "Register / Info", notes: "One-day PCA autocross" },
-      { date: "July 4–5, 2026", day: "Saturday–Sunday", event: "AAS Rounds 9–10, Larry Park Memorial", type: "Autocross", location: "Crows Landing", link: "Register / Info", notes: "Two-day AAS weekend" },
-      { date: "July 18–19, 2026", day: "Saturday–Sunday", event: "SFR Regional Autocross", type: "SFR AutoX", location: "Crows Landing", link: "Register / Info", notes: "Core regional SFR weekend" },
-      { date: "September 24", day: "Thursday", event: "Track Night in America", type: "Track Night", location: "Thunderhill", link: "https://www.tracknightinamerica.com/events/2009478-track-night-2026-thunderhill-raceway-park-september-24", notes: "2nd outing?" }
-    ];
-
     const state = {
       events: [],
       search: "",
-      type: "all",
-      sourceMode: "loading"
+      type: "all"
     };
 
     const $events = document.querySelector("#events");
@@ -557,147 +502,48 @@
       if (isOpen) $search.focus({ preventScroll: true });
     }
 
-    function parseCSV(text) {
-      const rows = [];
-      let row = [];
-      let cell = "";
-      let inQuotes = false;
-
-      for (let i = 0; i < text.length; i++) {
-        const char = text[i];
-        const next = text[i + 1];
-
-        if (char === '"' && inQuotes && next === '"') {
-          cell += '"';
-          i++;
-        } else if (char === '"') {
-          inQuotes = !inQuotes;
-        } else if (char === "," && !inQuotes) {
-          row.push(cell.trim());
-          cell = "";
-        } else if ((char === "\n" || char === "\r") && !inQuotes) {
-          if (char === "\r" && next === "\n") i++;
-          row.push(cell.trim());
-          if (row.some(Boolean)) rows.push(row);
-          row = [];
-          cell = "";
-        } else {
-          cell += char;
-        }
-      }
-      row.push(cell.trim());
-      if (row.some(Boolean)) rows.push(row);
-      return rows;
-    }
-
     function normalizeKey(key) {
-      return key.toLowerCase().replace(/[^a-z0-9]+/g, "").trim();
+      return String(key || "").toLowerCase().replace(/[^a-z0-9]+/g, "").trim();
     }
 
-    function rowsToEvents(rows) {
-      if (!rows.length) return [];
-      const headers = rows[0].map(normalizeKey);
-      const get = (row, names) => {
+    function cellText(cell) {
+      if (!cell) return "";
+      const value = cell.f ?? cell.v ?? "";
+      if (value === null || value === undefined) return "";
+      return String(value).trim();
+    }
+
+    function extractGoogleSheetJson(rawText) {
+      const firstBrace = rawText.indexOf("{");
+      const lastBrace = rawText.lastIndexOf("}");
+      if (firstBrace < 0 || lastBrace < 0) {
+        throw new Error("Google Sheet response did not contain JSON data.");
+      }
+      return JSON.parse(rawText.slice(firstBrace, lastBrace + 1));
+    }
+
+    function tableToEvents(table) {
+      const columns = (table.cols || []).map(col => normalizeKey(col.label));
+      const get = (cells, names) => {
         for (const name of names) {
-          const idx = headers.indexOf(normalizeKey(name));
-          if (idx >= 0) return row[idx] || "";
+          const idx = columns.indexOf(normalizeKey(name));
+          if (idx >= 0) return cellText(cells[idx]);
         }
         return "";
       };
 
-      return rows.slice(1).map(row => ({
-        date: get(row, ["Date"]),
-        day: get(row, ["Day"]),
-        event: get(row, ["Event / Series", "Event", "Series", "Event Series"]),
-        type: get(row, ["Type"]),
-        location: get(row, ["Location"]),
-        link: get(row, ["Link", "Register", "Info"]),
-        notes: get(row, ["Notes", "Note"])
-      })).filter(event => event.date && event.event);
-    }
-
-    function cellText(cell) {
-      return cell?.formattedValue || "";
-    }
-
-    function cellIsStruck(cell) {
-      return Boolean(
-        cell?.effectiveFormat?.textFormat?.strikethrough ||
-        cell?.userEnteredFormat?.textFormat?.strikethrough
-      );
-    }
-
-    function apiRowsToEvents(rowData = []) {
-      const rows = rowData.map(row => row.values || []);
-      if (!rows.length) return [];
-
-      const headers = rows[0].map(cell => normalizeKey(cellText(cell)));
-      const getIndex = names => {
-        for (const name of names) {
-          const idx = headers.indexOf(normalizeKey(name));
-          if (idx >= 0) return idx;
-        }
-        return -1;
-      };
-      const get = (row, names) => {
-        const idx = getIndex(names);
-        return idx >= 0 ? cellText(row[idx]) : "";
-      };
-      const rowHasStrike = row => {
-        const importantColumns = [
-          getIndex(["Date"]),
-          getIndex(["Day"]),
-          getIndex(["Event / Series", "Event", "Series", "Event Series"]),
-          getIndex(["Type"]),
-          getIndex(["Location"]),
-          getIndex(["Notes", "Note"])
-        ].filter(idx => idx >= 0);
-        return importantColumns.some(idx => cellIsStruck(row[idx]));
-      };
-
-      return rows.slice(1).map(row => ({
-        date: get(row, ["Date"]),
-        day: get(row, ["Day"]),
-        event: get(row, ["Event / Series", "Event", "Series", "Event Series"]),
-        type: get(row, ["Type"]),
-        location: get(row, ["Location"]),
-        link: get(row, ["Link", "Register", "Info"]),
-        notes: get(row, ["Notes", "Note"]),
-        struck: rowHasStrike(row)
-      })).filter(event => event.date && event.event);
-    }
-
-    async function fetchCsvEvents() {
-      const response = await fetch(getCsvUrl(), {
-        cache: "no-store",
-        headers: { "Cache-Control": "no-cache" }
-      });
-      if (!response.ok) throw new Error(`Sheet CSV request failed with ${response.status}`);
-      const text = await response.text();
-      const rows = parseCSV(text);
-      const events = rowsToEvents(rows);
-      if (!events.length) throw new Error("No events found in CSV sheet data");
-      return { events, mode: "csv" };
-    }
-
-    async function fetchApiEvents() {
-      const response = await fetch(getSheetsApiUrl(), {
-        cache: "no-store",
-        headers: { "Cache-Control": "no-cache" }
-      });
-      if (!response.ok) throw new Error(`Google Sheets API request failed with ${response.status}`);
-      const data = await response.json();
-      const targetSheet = data.sheets?.find(sheet => String(sheet.properties?.sheetId) === String(GID));
-      if (!targetSheet) throw new Error(`No sheet tab found for gid ${GID}`);
-      const rowData = targetSheet.data?.[0]?.rowData || [];
-      const events = apiRowsToEvents(rowData);
-      if (!events.length) throw new Error("No events found in API sheet data");
-      return { events, mode: "api", tabTitle: targetSheet.properties?.title || "selected tab" };
-    }
-
-    async function fetchLiveEvents() {
-      if (GOOGLE_SHEETS_API_KEY.trim()) return fetchApiEvents();
-      return fetchCsvEvents();
+      return (table.rows || []).map(row => {
+        const cells = row.c || [];
+        return {
+          date: get(cells, ["Date", "Dates"]),
+          day: get(cells, ["Day", "Day of Week", "Days"]),
+          event: get(cells, ["Event / Series", "Event", "Series", "Event Series", "Event Name"]),
+          type: get(cells, ["Type", "Category"]),
+          location: get(cells, ["Location", "Venue"]),
+          link: get(cells, ["Link", "Register", "Info", "URL"]),
+          notes: get(cells, ["Notes", "Note", "Details"])
+        };
+      }).filter(event => event.date && event.event);
     }
 
     function getYear(dateText) {
@@ -724,7 +570,6 @@
       const month = getMonthName(event.date);
       return {
         ...event,
-        struck: Boolean(event.struck),
         month,
         start,
         color: MONTH_COLORS[month] || "#d7ff00"
@@ -772,8 +617,7 @@
     function render() {
       const events = visibleEvents();
       const sourceCount = state.events.length;
-      const sourceLabel = state.sourceMode === "fallback" ? "fallback data" : state.sourceMode === "api" ? "live Google Sheet API" : "live Google Sheet CSV";
-      $status.textContent = `${events.length} of ${sourceCount} events shown from ${sourceLabel}`;
+      $status.textContent = `${events.length} of ${sourceCount} live events shown`;
 
       if (!events.length) {
         $events.innerHTML = `<div class="empty">No events match the current filters.</div>`;
@@ -793,7 +637,7 @@
 
         return `
           ${monthHeader}
-          <article class="event-card ${event.struck ? "is-struck" : ""}" tabindex="0" role="button" aria-expanded="false" style="--month-color:${event.color}" data-card-index="${index}">
+          <article class="event-card" tabindex="0" role="button" aria-expanded="false" style="--month-color:${event.color}" data-card-index="${index}">
             <div class="card-summary">
               <div>
                 <h2 class="event-title">${escapeHTML(event.event)}</h2>
@@ -835,24 +679,40 @@
       });
     }
 
+    function showLoadError(message) {
+      $status.textContent = "Could not load live Google Sheet data.";
+      $events.innerHTML = `
+        <div class="error">
+          <strong>Live sheet load failed.</strong><br><br>
+          ${escapeHTML(message)}<br><br>
+          Check that the sheet is shared as <strong>Anyone with the link can view</strong>, and confirm the tab ID is <strong>gid=${escapeHTML(GID)}</strong>.
+        </div>
+      `;
+    }
+
     async function loadEvents() {
       try {
-        const result = await fetchLiveEvents();
-        const events = result.events.map(enrichEvent).sort((a, b) => a.start - b.start);
+        const response = await fetch(getSheetJsonUrl(), {
+          cache: "no-store",
+          headers: { "Cache-Control": "no-cache" }
+        });
+        if (!response.ok) throw new Error(`Sheet request failed with ${response.status}`);
+
+        const text = await response.text();
+        const json = extractGoogleSheetJson(text);
+        const events = tableToEvents(json.table).map(enrichEvent).sort((a, b) => a.start - b.start);
+
+        if (!events.length) throw new Error("No usable event rows found. Confirm the header row includes Date and Event / Series, or Event Name.");
+
         state.events = events;
-        state.sourceMode = result.mode;
-        const strikeNote = result.mode === "api" ? " Strikethrough formatting is enabled." : " CSV mode cannot read strikethrough formatting.";
-        $status.textContent = `Loaded from Google Sheet ${result.mode === "api" ? "API" : "CSV"}.${strikeNote}`;
+        $status.textContent = "Loaded live from Google Sheet";
+        renderTypeFilter(state.events);
+        renderLegend(state.events);
+        render();
       } catch (error) {
         console.warn(error);
-        state.events = FALLBACK_EVENTS.map(enrichEvent).sort((a, b) => a.start - b.start);
-        state.sourceMode = "fallback";
-        $status.textContent = `Google Sheet failed to load, so built-in fallback events are showing. ${error.message}`;
+        showLoadError(error.message || "Unknown error.");
       }
-
-      renderTypeFilter(state.events);
-      renderLegend(state.events);
-      render();
     }
 
     $menuToggle.addEventListener("click", () => {
